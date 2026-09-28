@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 
 # Cheapest model keeps the footprint on your weekly limit near-zero while still
 # starting the 5-hour window (any message anchors it).
 PING_MODEL = "claude-haiku-4-5-20251001"
 PING_PROMPT = "ok"
+
+
+def _claude_bin() -> str:
+    # On Windows the launcher is claude.cmd; shutil.which resolves it for us.
+    return shutil.which("claude") or "claude"
 
 
 def send_ping(model: str = PING_MODEL, prompt: str = PING_PROMPT) -> str:
@@ -21,7 +27,7 @@ def send_ping(model: str = PING_MODEL, prompt: str = PING_PROMPT) -> str:
     env.pop("ANTHROPIC_API_KEY", None)
     result = subprocess.run(
         [
-            "claude", "-p", prompt,
+            _claude_bin(), "-p", prompt,
             "--model", model,
             "--tools", "",               # no tools: fast, no permission prompts
             "--no-session-persistence",  # don't clutter session history

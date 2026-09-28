@@ -1,18 +1,18 @@
 """Read Claude subscription usage (5-hour + weekly windows) — read-only.
 
-This never sends a message and never consumes quota. It reads the OAuth token
-that Claude Code stores in the macOS keychain (the same login claude.ai and
-Claude Code share) and asks Anthropic's usage endpoint for the current window
-state. The token is only ever sent to api.anthropic.com.
+Never sends a message and never consumes quota. Asks Anthropic's usage endpoint
+for the current window state using the token from credentials.py.
 """
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from datetime import datetime
 from typing import Optional
 
-KEYCHAIN_SERVICE = "Claude Code-credentials"
+from .credentials import CredentialsError, get_access_token
+
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 OAUTH_BETA = "oauth-2025-04-20"
 
@@ -21,50 +21,47 @@ class UsageError(Exception):
     """Raised when credentials or the usage endpoint are unavailable."""
 
 
-def get_access_token() -> str:
-    """Return the Claude Code OAuth access token from the macOS keychain."""
-    result = subprocess.run(
-        ["security", "find-generic-password", "-w", "-s", KEYCHAIN_SERVICE],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise UsageError(
-            "Couldn't read Claude credentials from the keychain. "
-            "Are you logged in? Run `claude` and sign in first."
-        )
+def _http_get_json(url: str, headers: dict) -> dict:
+    """GET JSON. Prefer curl (ships on macOS, Linux, and Windows 10+ and uses the
+    system cert store); fall back to urllib where curl is absent."""
+    if shutil.which("curl"):
+        args = ["curl", "-sS", "--fail-with-body", url]
+        for key, value in headers.items():
+            args += ["-H", f"{key}: {value}"]
+        result = subprocess.run(args, capture_output=True, text=True)
+        if result.returncode != 0:
+            detail = result.stdout.strip() or result.stderr.strip()
+            raise UsageError(f"Usage request failed: {detail}")
+        body = result.stdout
+    else:
+        import urllib.request
+
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode()
+        except Exception as exc:  # noqa: BLE001 - report any transport failure
+            raise UsageError(f"Usage request failed: {exc}")
     try:
-        creds = json.loads(result.stdout)
-        return creds["claudeAiOauth"]["accessToken"]
-    except (json.JSONDecodeError, KeyError) as exc:
-        raise UsageError(f"Unexpected credential format in keychain: {exc}")
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"Could not parse usage response: {exc}")
 
 
 def fetch_usage(token: Optional[str] = None) -> dict:
-    """GET the usage endpoint. Read-only — does not anchor a window or spend quota.
-
-    Uses curl so we get the system certificate store (macOS Python's urllib does
-    not, and fails cert verification against api.anthropic.com).
-    """
-    token = token or get_access_token()
-    result = subprocess.run(
-        [
-            "curl", "-sS", "--fail-with-body",
-            USAGE_URL,
-            "-H", f"Authorization: Bearer {token}",
-            "-H", f"anthropic-beta: {OAUTH_BETA}",
-            "-H", "User-Agent: claude-anchor",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        detail = result.stdout.strip() or result.stderr.strip()
-        raise UsageError(f"Usage request failed: {detail}")
+    """GET the usage endpoint. Read-only — does not anchor a window or spend quota."""
     try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise UsageError(f"Could not parse usage response: {exc}")
+        token = token or get_access_token()
+    except CredentialsError as exc:
+        raise UsageError(str(exc))
+    return _http_get_json(
+        USAGE_URL,
+        {
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": OAUTH_BETA,
+            "User-Agent": "claude-heartbeat",
+        },
+    )
 
 
 def parse_iso(ts: Optional[str]) -> Optional[datetime]:
