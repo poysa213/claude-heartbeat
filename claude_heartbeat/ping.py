@@ -1,4 +1,4 @@
-"""Send the one tiny message that anchors the 5-hour window."""
+"""Send the one tiny message that starts (or keeps alive) the 5-hour session."""
 from __future__ import annotations
 
 import os

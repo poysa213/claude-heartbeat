@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Thin launcher so you can run ./bin/claude-anchor without installing the package.
-set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec /usr/bin/env PYTHONPATH="$DIR" python3 -m claude_anchor "$@"
