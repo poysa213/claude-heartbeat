@@ -1,71 +1,55 @@
-# claude-heartbeat
+# 💓 claude-heartbeat
 
-Keep your Claude session **always alive**.
+**Stop babysitting the "resets at 7:20 AM" timer.**
 
-Claude's usage runs in a rolling 5-hour session. When it ends, you see
-*"resets at X — send a message to start a new session."* `claude-heartbeat`
-sends that message **for you, automatically, the moment the session resets** — so
-you're always in a live, freshly-started session and never sit there blocked
-waiting to start a new one. It chains session → session → session, around the
-clock.
+Claude's session dies every 5 hours and makes you send a message to start the next one. `claude-heartbeat` sends it for you — the *second* it resets — so your session is always warm and you're never the person refreshing a countdown at 2 AM.
 
-> This doesn't raise, bypass, or defeat any limit. It only sends a single normal
-> message you could send yourself — just at the right moment, every time.
+![macOS](https://img.shields.io/badge/macOS-000?logo=apple&logoColor=white)
+![Python](https://img.shields.io/badge/python-3.9+-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-22c55e)
+![Stars](https://img.shields.io/github/stars/poysa213/claude-heartbeat?style=social)
 
-## How it works
-
-- **Reads your usage for free.** It reads the OAuth token Claude Code stores in
-  your macOS keychain and calls Anthropic's usage endpoint
-  (`GET /api/oauth/usage`) to learn exactly when the current session resets. This
-  is a pure read — it never spends quota. Your token is only ever sent to
-  `api.anthropic.com`.
-- **Restarts the session at each reset.** Just after `resets_at`, it runs
-  `claude -p "ok"` on the cheapest model, which starts a fresh 5-hour session.
-  Claude Code and claude.ai share the same subscription session, so this is the
-  same one your normal usage uses.
-- **Self-scheduling, no polling.** After each ping it reads the *new* reset time
-  and re-arms a `launchd` job for the next one. That's ~2 free reads per 5-hour
-  cycle — no constant polling of the endpoint.
-- **Self-healing.** If the Mac was asleep through a reset, launchd runs the job
-  on wake: it starts a session and re-schedules. You're never left stopped.
-
-## Requirements
-
-- macOS
-- [Claude Code](https://claude.com/claude-code) installed and signed in with a
-  Pro/Max **subscription** (not an API key)
-- Python 3.9+ (ships with macOS)
-
-## Usage
-
-```bash
-# See where you stand (read-only, no quota spent)
-./bin/claude-heartbeat status
-
-# Start a session right now
-./bin/claude-heartbeat ping
-
-# Turn the keep-alive ON — chains sessions across resets, 24/7
-./bin/claude-heartbeat start
-
-# Turn it OFF
-./bin/claude-heartbeat stop
+```console
+$ claude-heartbeat status
+Claude usage
+  5-hour   :  14.0%  resets Mon 07:19 CET  (idle)
+  weekly   :  22.0%  resets Sun 02:59 CET
+  heartbeat: running ✓
 ```
 
-Once started, it just runs. Check on it anytime with `status`, or read
-`~/Library/Logs/claude-heartbeat.log`.
+> Not a hack. It sends one normal message you could've sent yourself — just always on time.
 
-## Notes & caveats
+## Get it going
 
-- **Sleep timing:** the keep-alive fires when the Mac is awake. If it's asleep
-  through a reset, the next session starts when the Mac wakes (launchd catches
-  up) rather than to-the-second at reset. Firing at exact reset while asleep
-  needs a root LaunchDaemon + `pmset` wake — planned for a later version.
-- If **you** are actively using Claude, your own messages keep the session
-  alive; `run` notices an active session and skips its ping, so it never
-  double-starts.
-- Logs: `~/Library/Logs/claude-heartbeat.log`.
+```bash
+git clone https://github.com/poysa213/claude-heartbeat
+cd claude-heartbeat
+./bin/claude-heartbeat start
+```
 
-## License
+That's it. Go do literally anything else.
 
-MIT
+## Four commands, that's the whole thing
+
+| | |
+|---|---|
+| `status` | where you stand — free, read-only |
+| `ping` | start a session right now |
+| `start` | keep it alive, forever |
+| `stop` | …or don't |
+
+## How it actually works
+
+- **Reads your reset time for free** from `/api/oauth/usage` using the token already in your macOS keychain (only ever sent to Anthropic, nowhere else).
+- **At each reset** it fires one tiny `claude -p` and re-arms itself for the next one. No polling, no cron soup — ~2 reads per cycle.
+- **Naps when you nap:** if your Mac was asleep, it catches up the moment it wakes.
+
+Needs macOS + [Claude Code](https://claude.com/claude-code) signed in with a Pro/Max **subscription** (not an API key).
+
+## One honest caveat
+
+Dead asleep through a 3 AM reset? It starts the session when your Mac wakes, not to the second. True lid-closed, round-the-clock keep-alive is on the roadmap.
+
+---
+
+MIT · built because staring at a countdown is a bad use of a human.
